@@ -1,0 +1,21 @@
+{
+  "_comment": "Simplified contact record modelled on Amazon Connect Contact Trace Records (CTR). Only the fields the CDP adapter reads are included.",
+  "ContactId": "0b7c6f6e-6f2c-4a52-9a3e-2f1d8f0c1a11",
+  "Channel": "VOICE",
+  "InitiationTimestamp": "2026-10-18T09:41:46Z",
+  "DisconnectTimestamp": "2026-10-18T09:47:29Z",
+  "CustomerEndpoint": {
+    "Address": "+12065551488",
+    "Type": "TELEPHONE_NUMBER"
+  },
+  "Agent": {
+    "Username": "agent2208"
+  },
+  "Queue": {
+    "Name": "Billing"
+  },
+  "Attributes": {
+    "intent": "billing_question",
+    "summary": "Customer asked about higher bill. Explained one-time activation fee."
+  }
+}

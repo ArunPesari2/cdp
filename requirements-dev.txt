@@ -1,0 +1,6 @@
+# One virtual environment for all CDP Python packages:
+#   python -m venv .venv && .venv\Scripts\pip install -r requirements-dev.txt
+-e libs/cdp_common
+-e sources
+-e pipelines
+pytest>=8

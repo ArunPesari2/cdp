@@ -1,0 +1,15 @@
+[
+  {"name": "event_id", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "customer_id", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "event_ts", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "event_type", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "source", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "vendor", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "channel", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "intent", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "agent_id", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "duration_sec", "type": "INT64", "mode": "NULLABLE"},
+  {"name": "queue", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "summary", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "processed_ts", "type": "TIMESTAMP", "mode": "REQUIRED"}
+]

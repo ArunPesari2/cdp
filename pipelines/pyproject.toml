@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cdp-pipelines"
+version = "0.1.0"
+description = "CDP Apache Beam pipelines and the shared cdp_beam library"
+requires-python = ">=3.11"
+dependencies = [
+    "apache-beam[gcp]>=2.60",
+]
+
+[tool.setuptools.packages.find]
+include = ["cdp_beam*", "cdp_pipelines*"]

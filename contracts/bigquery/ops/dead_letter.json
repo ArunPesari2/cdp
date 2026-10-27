@@ -1,0 +1,9 @@
+[
+  {"name": "source", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "stage", "type": "STRING", "mode": "REQUIRED", "description": "adapter | validate | resolve_identity"},
+  {"name": "error_code", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "error_detail", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "event_id", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "raw_payload", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "failed_ts", "type": "TIMESTAMP", "mode": "REQUIRED"}
+]

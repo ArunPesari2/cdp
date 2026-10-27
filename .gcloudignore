@@ -1,0 +1,17 @@
+# Files not uploaded to Cloud Build (the build source is the local folder).
+.git/
+.gitignore
+.venv/
+.claude/
+.deploy/
+.idea/
+.vscode/
+.env
+**/__pycache__/
+**/target/
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.backup
+**/*.egg-info/
+docs/
+learning/

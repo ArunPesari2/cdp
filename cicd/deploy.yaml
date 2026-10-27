@@ -1,0 +1,125 @@
+# CD: test -> build -> deploy data + runtime stacks -> start/update the care pipeline -> smoke test.
+# Runs as cdp-deployer.
+# Started by hand from the repository root (uploads the local folder as the source):
+#   $PROJECT = "learning-dev-2026-07"; $TAG = "v" + (Get-Date -Format "yyyyMMdd-HHmmss")
+#   gcloud builds submit --project=$PROJECT --region=us-central1 --config=cicd/deploy.yaml `
+#     --service-account="projects/$PROJECT/serviceAccounts/cdp-deployer@$PROJECT.iam.gserviceaccount.com" `
+#     --substitutions="_TAG=$TAG"
+substitutions:
+  _ENV: dev
+  _REGION: us-central1
+  _TAG: "" # required: image version, passed with --substitutions
+  _REGISTRY: us-central1-docker.pkg.dev/${PROJECT_ID}/cdp
+  _TF_STATE_BUCKET: ${PROJECT_ID}-tfstate
+
+options:
+  dynamicSubstitutions: true
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+  env:
+    - ENV=${_ENV}
+    - REGION=${_REGION}
+    - TF_STATE_BUCKET=${_TF_STATE_BUCKET}
+    - CLOUDSDK_CORE_PROJECT=${PROJECT_ID}
+
+steps:
+  # -- Inputs --
+  - id: check-inputs
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args: ["-c", "[ -n '${_TAG}' ] || { echo 'ERROR: pass --substitutions=_TAG=<version>' >&2; exit 1; }"]
+    waitFor: ["-"]
+
+  # -- Test --
+  - id: test-python
+    name: python:3.11-slim
+    entrypoint: bash
+    args: ["-c", "pip install -q -r requirements-dev.txt && python -m pytest pipelines/tests -q -p no:warnings"]
+    waitFor: ["check-inputs"]
+
+  - id: test-java
+    name: maven:3.9.9-eclipse-temurin-21
+    args: ["mvn", "-q", "-B", "test"]
+    waitFor: ["check-inputs"]
+
+  # -- Build and push images (tagged with _TAG) --
+  - id: build-customer-api
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "serving/customer-api/Dockerfile", "-t", "${_REGISTRY}/customer-api:${_TAG}", "."]
+    waitFor: ["test-java"]
+
+  - id: build-sources
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "sources/Dockerfile", "-t", "${_REGISTRY}/sources:${_TAG}", "."]
+    waitFor: ["test-python"]
+
+  - id: build-care-pipeline
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "pipelines/Dockerfile", "-t", "${_REGISTRY}/care-pipeline:${_TAG}", "."]
+    waitFor: ["test-python"]
+
+  - id: push-images
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        for image in customer-api sources care-pipeline; do
+          docker push "${_REGISTRY}/$$image:${_TAG}"
+        done
+    waitFor: ["build-customer-api", "build-sources", "build-care-pipeline"]
+
+  - id: build-flex-template
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    args:
+      - gcloud
+      - dataflow
+      - flex-template
+      - build
+      - gs://${PROJECT_ID}-cdp-dataflow/templates/care-pipeline-${_TAG}.json
+      - --image=${_REGISTRY}/care-pipeline:${_TAG}
+      - --sdk-language=PYTHON
+      - --metadata-file=pipelines/care-template-metadata.json
+    waitFor: ["push-images"]
+
+  # -- Deploy (Terraform) --
+  - id: deploy-data
+    name: hashicorp/terraform:1.15.1
+    entrypoint: sh
+    args: ["cicd/tf.sh", "data", "apply"]
+    waitFor: ["push-images"]
+
+  - id: deploy-runtime
+    name: hashicorp/terraform:1.15.1
+    entrypoint: sh
+    args:
+      - cicd/tf.sh
+      - runtime
+      - apply
+      - -var=customer_api_image=${_REGISTRY}/customer-api:${_TAG}
+      - -var=sources_image=${_REGISTRY}/sources:${_TAG}
+    waitFor: ["deploy-data"]
+
+  # Saves the runtime stack's outputs (subscription, Spanner names) for the next step.
+  - id: runtime-outputs
+    name: hashicorp/terraform:1.15.1
+    entrypoint: sh
+    args: ["cicd/tf.sh", "runtime", "output"]
+    waitFor: ["deploy-runtime"]
+
+  # -- Release the care pipeline (Dataflow): start it, or update the running job in place --
+  - id: deploy-care-job
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args: ["cicd/deploy_care_job.sh", "gs://${PROJECT_ID}-cdp-dataflow/templates/care-pipeline-${_TAG}.json"]
+    waitFor: ["runtime-outputs", "build-flex-template"]
+
+  # -- Verify --
+  - id: smoke-test
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args: ["cicd/smoke_test.sh"]
+    waitFor: ["deploy-care-job"]
+
+timeout: 3600s

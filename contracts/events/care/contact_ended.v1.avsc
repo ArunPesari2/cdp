@@ -1,0 +1,31 @@
+{
+  "type": "record",
+  "name": "ContactEnded",
+  "namespace": "com.cdp.events.care",
+  "doc": "Canonical CDP event: one customer-service contact (call or chat) has ended.",
+  "fields": [
+    {"name": "event_id", "type": "string", "doc": "Vendor contact id; dedupe key"},
+    {"name": "event_type", "type": {"type": "enum", "name": "EventType", "symbols": ["contact_ended"]}},
+    {"name": "schema_version", "type": "int", "default": 1},
+    {"name": "event_ts", "type": "string", "doc": "UTC ISO-8601; when the contact ended"},
+    {"name": "source", "type": "string", "default": "care"},
+    {"name": "identifiers", "type": {"type": "map", "values": "string"}, "doc": "Raw identifiers, e.g. {phone: +1206...}"},
+    {
+      "name": "payload",
+      "type": {
+        "type": "record",
+        "name": "ContactEndedPayload",
+        "fields": [
+          {"name": "channel", "type": {"type": "enum", "name": "Channel", "symbols": ["call", "chat"]}},
+          {"name": "intent", "type": {"type": "enum", "name": "Intent", "symbols": [
+            "network_issue", "billing_question", "upgrade_inquiry", "plan_change", "device_support", "cancel_request"
+          ]}},
+          {"name": "agent_id", "type": "string"},
+          {"name": "duration_sec", "type": "int"},
+          {"name": "queue", "type": ["null", "string"], "default": null},
+          {"name": "summary", "type": "string"}
+        ]
+      }
+    }
+  ]
+}

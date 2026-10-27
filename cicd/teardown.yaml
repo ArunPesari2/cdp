@@ -1,0 +1,40 @@
+# Stop the care pipeline (Dataflow), then destroy the hourly-billed runtime stack (Spanner, Pub/Sub,
+# Cloud Run). Runs as cdp-deployer.
+# BigQuery history, buckets, images and identities are kept. Run cicd/deploy.yaml to bring it back.
+# Started by hand from the repository root:
+#   $PROJECT = "learning-dev-2026-07"
+#   gcloud builds submit --project=$PROJECT --region=us-central1 --config=cicd/teardown.yaml `
+#     --service-account="projects/$PROJECT/serviceAccounts/cdp-deployer@$PROJECT.iam.gserviceaccount.com"
+substitutions:
+  _ENV: dev
+  _REGION: us-central1
+  _TF_STATE_BUCKET: ${PROJECT_ID}-tfstate
+
+options:
+  dynamicSubstitutions: true
+  logging: CLOUD_LOGGING_ONLY
+  env:
+    - ENV=${_ENV}
+    - REGION=${_REGION}
+    - TF_STATE_BUCKET=${_TF_STATE_BUCKET}
+    - CLOUDSDK_CORE_PROJECT=${PROJECT_ID}
+
+steps:
+  # cancel or drain, per platform/terraform/envs/<env>/care-pipeline.env.
+  - id: stop-care-job
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args: ["cicd/stop_care_job.sh"]
+
+  # Variable values are irrelevant for destroy but must be set.
+  - id: destroy-runtime
+    name: hashicorp/terraform:1.15.1
+    entrypoint: sh
+    args:
+      - cicd/tf.sh
+      - runtime
+      - destroy
+      - -var=customer_api_image=unused
+      - -var=sources_image=unused
+
+timeout: 1800s

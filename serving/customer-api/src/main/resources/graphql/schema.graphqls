@@ -1,0 +1,27 @@
+type Query {
+  "Find a customer by CDP id, or by a raw identifier (phone or email)."
+  customer(id: ID, phone: String, email: String): Customer
+}
+
+type Customer {
+  customerId: ID!
+  firstName: String
+  lastName: String
+  email: String
+  phone: String
+  status: String
+  "Most recent interactions across channels, newest first (max 50)."
+  recentInteractions(limit: Int = 10, channel: String): [Interaction!]!
+}
+
+type Interaction {
+  eventId: ID!
+  eventTs: String!
+  eventType: String!
+  channel: String
+  intent: String
+  agentId: String
+  durationSec: Int
+  summary: String
+  source: String!
+}

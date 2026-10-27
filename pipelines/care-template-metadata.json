@@ -1,0 +1,24 @@
+{
+  "name": "CDP care pipeline",
+  "description": "Vendor contact records from Pub/Sub -> Spanner Interaction + BigQuery core.interactions",
+  "parameters": [
+    {
+      "name": "subscription",
+      "label": "Pub/Sub subscription name",
+      "helpText": "Subscription on the vendor topic, e.g. vendor-care-ctr-pipeline",
+      "isOptional": false
+    },
+    {
+      "name": "spanner_instance",
+      "label": "Spanner instance id",
+      "helpText": "e.g. cdp-instance",
+      "isOptional": false
+    },
+    {
+      "name": "spanner_database",
+      "label": "Spanner database id",
+      "helpText": "e.g. cdp",
+      "isOptional": false
+    }
+  ]
+}

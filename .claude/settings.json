@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Claude_Docs__update",
+      "mcp__claude_ai_Claude_Docs__export",
+      "PowerShell($tools = 'python','py','uv','java','mvn','docker','git','gcloud','terraform','make'; foreach \\($t in $tools\\) { $c = Get-Command $t -ErrorAction SilentlyContinue; if \\($c\\) { \"$t : $\\($c.Source\\)\" } else { \"$t : MISSING\" } }; python --version; java -version; docker --version; git --version)",
+      "PowerShell($r = \"C:\\\\Arun_Personal\\\\misc_repos\\\\cdp\"; $pkgs = 'sources\\\\cdp_sources','sources\\\\cdp_sources\\\\world','sources\\\\cdp_sources\\\\care','pipelines\\\\cdp_beam','pipelines\\\\cdp_beam\\\\adapters','pipelines\\\\cdp_beam\\\\transforms','pipelines\\\\cdp_beam\\\\io','pipelines\\\\cdp_pipelines','pipelines\\\\cdp_pipelines\\\\care'; foreach \\($p in $pkgs\\) { New-Item -ItemType Directory -Force \"$r\\\\$p\" | Out-Null; if \\(-not \\(Test-Path \"$r\\\\$p\\\\__init__.py\"\\)\\) { New-Item -ItemType File \"$r\\\\$p\\\\__init__.py\" | Out-Null } }; Remove-Item -Recurse -Force \"$r\\\\sources\\\\care\", \"$r\\\\samples\"; python -m venv \"$r\\\\.venv\"; \"venv created\")",
+      "PowerShell(docker compose -f \"C:\\\\Arun_Personal\\\\misc_repos\\\\cdp\\\\platform\\\\local\\\\docker-compose.yml\" up -d)"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+server:
+  port: ${PORT:8080}   # Cloud Run sets PORT
+
+spring:
+  application:
+    name: customer-api
+  threads:
+    virtual:
+      enabled: true
+
+cdp:
+  spanner:
+    project: ${GCP_PROJECT:}
+    instance: ${SPANNER_INSTANCE:cdp-instance}
+    database: ${SPANNER_DATABASE:cdp}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

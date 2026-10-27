@@ -1,0 +1,28 @@
+Let's take just one concept at a time.
+
+Imagine you have a GCP project called cdp-dev.
+
+You run Terraform to create a Cloud Storage bucket.
+provider "google" {
+  project = "cdp-dev"
+}
+
+
+What happens?
+1. Terraform sends a request to Google Cloud.
+2. Google Cloud creates the bucket in cdp-dev.
+3. The API request itself generally has no separate charge, but using the bucket may cost money.
+Now, Google Cloud also limits how many API requests you can make. It needs to know which project should count toward those limits. This is called the quota project.
+
+That's why these settings exist:
+user_project_override = true
+billing_project       = "cdp-dev"
+
+
+- user_project_override = true: Tell Terraform to explicitly specify the quota project in supported API requests.
+- billing_project = "cdp-dev": Specify cdp-dev as that quota project.
+Remember just this for now:
+- project → Where Terraform creates resources.
+- billing_project → Which project is used for applicable API quota attribution.
+- API calls can be free even though the resources they create cost money.
+You don't need to set billing_project to a different project. Using the same project for both is valid.

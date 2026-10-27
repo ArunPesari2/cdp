@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cdp-sources"
+version = "0.1.0"
+description = "Mock source systems that feed the CDP (world generator, care vendor, ...)"
+requires-python = ">=3.11"
+dependencies = [
+    "faker>=25",
+    "pyarrow>=14",
+    "google-cloud-spanner>=3.40",
+    "google-cloud-pubsub>=2.20",
+]
+
+[tool.setuptools.packages.find]
+include = ["cdp_sources*"]
