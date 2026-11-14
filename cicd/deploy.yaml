@@ -20,6 +20,10 @@ substitutions:
   # Built from PROJECT_ID (needs dynamicSubstitutions); not normally overridden.
   _REGISTRY: us-central1-docker.pkg.dev/${PROJECT_ID}/cdp
   _TF_STATE_BUCKET: ${PROJECT_ID}-tfstate
+  # gcloud image for the cicd scripts, pinned by digest (the tag is only for readers). Unpinned
+  # :slim moved to 592.0.0 on 2026-11-03, which dropped python3 and broke the scripts. Since then
+  # the scripts use only gcloud, bash, sed and cat. Upgrade by changing the version and digest together.
+  _GCLOUD_IMAGE: gcr.io/google.com/cloudsdktool/cloud-sdk:593.0.0-slim@sha256:e8394c66f4f66336af311343ff9a84c84521f8c1113ebc8abfe98bab9a155099
 
 options:
   dynamicSubstitutions: true # lets _REGISTRY resolve ${PROJECT_ID}; on for triggers, must be set for gcloud builds submit
@@ -103,7 +107,7 @@ steps:
 
   # Must come after deploy-data: waitFor can only name steps defined earlier in the file.
   - id: build-flex-template
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    name: ${_GCLOUD_IMAGE}
     args:
       - gcloud
       - dataflow
@@ -136,14 +140,14 @@ steps:
 
   # -- Release the care pipeline (Dataflow): start it, or update the running job in place --
   - id: deploy-care-job
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    name: ${_GCLOUD_IMAGE}
     entrypoint: bash
     args: ["cicd/deploy_care_job.sh", "gs://${PROJECT_ID}-cdp-dataflow/templates/care-pipeline-${_TAG}.json"]
     waitFor: ["runtime-outputs", "build-flex-template"]
 
   # -- Verify --
   - id: smoke-test
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    name: ${_GCLOUD_IMAGE}
     entrypoint: bash
     args: ["cicd/smoke_test.sh"]
     waitFor: ["deploy-care-job"]

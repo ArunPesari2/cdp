@@ -1,6 +1,9 @@
 # Dataflow Flex Template launcher image. Build context: repository root.
 # Workers use Dataflow's standard Beam image; our code reaches them through setup.py.
-FROM gcr.io/dataflow-templates-base/python311-template-launcher-base:latest
+# Pinned to release 20260901-rc00 by digest, not :latest. From 20261002 on, Google publishes this image
+# with zstd-compressed layers (tar+zstd), and the Docker daemon on Cloud Build workers can't unpack them:
+# the pull fails with "archive/tar: invalid tar header". Remove the pin once a build with zstd succeeds.
+FROM gcr.io/dataflow-templates-base/python311-template-launcher-base@sha256:e411d2d5bb9a3d1caee7a576f800ad858d899ed881d8434bb3230fb6cf608d19
 
 ARG BEAM_VERSION=2.77.0
 WORKDIR /template

@@ -2,7 +2,7 @@
 # Start the care pipeline (Dataflow streaming job) from this release's Flex Template, or update the
 # running job in place, then wait until it is running.
 #   cicd/deploy_care_job.sh <gs:// path of the Flex Template file>
-# Needs: ENV, REGION, CLOUDSDK_CORE_PROJECT, and .deploy/runtime-outputs.json (cicd/tf.sh runtime output).
+# Needs: ENV, REGION, CLOUDSDK_CORE_PROJECT, and .deploy/runtime/<name> files (cicd/tf.sh runtime output).
 # Job settings per environment: platform/terraform/envs/<env>/care-pipeline.env.
 set -euo pipefail
 
@@ -11,9 +11,10 @@ PROJECT="${CLOUDSDK_CORE_PROJECT}"
 JOB_NAME="care-pipeline"
 . "platform/terraform/envs/${ENV}/care-pipeline.env"
 
-# Resource names come from the runtime stack, not retyped here.
+# Resource names come from the runtime stack, not retyped here: cicd/tf.sh wrote each output's bare
+# value to .deploy/runtime/<name>. A missing file makes cat fail, and set -e stops the script.
 output() {
-  python3 -c 'import json,sys; print(json.load(open(".deploy/runtime-outputs.json"))[sys.argv[1]]["value"])' "$1"
+  cat ".deploy/runtime/$1"
 }
 SUBSCRIPTION=$(output care_subscription)
 SPANNER_INSTANCE=$(output spanner_instance)

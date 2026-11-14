@@ -9,6 +9,8 @@ substitutions:
   _ENV: dev
   _REGION: us-central1
   _TF_STATE_BUCKET: ${PROJECT_ID}-tfstate
+  # Same pinned gcloud image as cicd/deploy.yaml (see the note there); keep the two in step.
+  _GCLOUD_IMAGE: gcr.io/google.com/cloudsdktool/cloud-sdk:593.0.0-slim@sha256:e8394c66f4f66336af311343ff9a84c84521f8c1113ebc8abfe98bab9a155099
 
 options:
   dynamicSubstitutions: true
@@ -22,7 +24,7 @@ options:
 steps:
   # cancel or drain, per platform/terraform/envs/<env>/care-pipeline.env.
   - id: stop-care-job
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    name: ${_GCLOUD_IMAGE}
     entrypoint: bash
     args: ["cicd/stop_care_job.sh"]
 
