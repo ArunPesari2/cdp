@@ -3,16 +3,16 @@
 import time
 
 import apache_beam as beam
+from apache_beam.coders import BooleanCoder
 from apache_beam.metrics import Metrics
-from apache_beam.transforms.combiners import CountCombineFn
 from apache_beam.transforms.timeutil import TimeDomain
-from apache_beam.transforms.userstate import CombiningValueStateSpec, TimerSpec, on_timer
+from apache_beam.transforms.userstate import ReadModifyWriteStateSpec, TimerSpec, on_timer
 
 DEFAULT_WINDOW_SECONDS = 24 * 3600
 
 
 class _DedupeFn(beam.DoFn):
-    SEEN = CombiningValueStateSpec("seen", combine_fn=CountCombineFn())
+    SEEN = ReadModifyWriteStateSpec("seen", BooleanCoder())
     EXPIRY = TimerSpec("expiry", TimeDomain.REAL_TIME)
 
     def __init__(self, window_seconds: int):
@@ -24,7 +24,7 @@ class _DedupeFn(beam.DoFn):
         if seen.read():
             self.duplicates.inc()
             return
-        seen.add(1)
+        seen.write(True)
         expiry.set(time.time() + self.window_seconds)
         yield event
 

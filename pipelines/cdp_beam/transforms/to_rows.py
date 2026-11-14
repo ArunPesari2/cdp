@@ -33,7 +33,7 @@ def interaction_bigquery_row(event: dict) -> dict:
     return {
         "event_id": event["event_id"],
         "customer_id": event["customer_id"],
-        "event_ts": _ts(event["event_ts"]).isoformat(),
+        "event_ts": event["event_ts"],  # already canonical UTC ISO-8601 (adapter)
         "event_type": event["event_type"],
         "source": event["source"],
         "vendor": event.get("vendor"),

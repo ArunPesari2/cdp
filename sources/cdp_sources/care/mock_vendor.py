@@ -5,8 +5,7 @@ CTRs, see contracts/vendor/connect/ctr.sample.json) to the vendor stream, the
 way a real platform would. Deliberately injects the faults a real feed has.
 
 Runs as Cloud Run job `cdp-care-vendor`:
-  python -m cdp_sources.care.mock_vendor --count 50                  # publish to the vendor topic
-  python -m cdp_sources.care.mock_vendor --count 5 --sink stdout     # print records (job logs)
+  python -m cdp_sources.care.mock_vendor --count 50
 """
 
 import argparse
@@ -94,14 +93,6 @@ class MockVendor:
         return records
 
 
-class StdoutSink:
-    def send(self, record: dict) -> None:
-        print(json.dumps(record))
-
-    def close(self) -> None:
-        pass
-
-
 class PubSubSink:
     def __init__(self, project: str):
         from google.cloud import pubsub_v1
@@ -126,7 +117,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--count", type=int, default=50, help="Number of contacts (resends are extra)")
     parser.add_argument("--rate", type=float, default=0, help="Contacts per second; 0 = as fast as possible")
-    parser.add_argument("--sink", choices=["pubsub", "stdout"], default="pubsub")
     parser.add_argument("--seed", type=int, default=None,
                         help="Fix for reproducible output; the same seed resends the same ContactIds")
     parser.add_argument("--pool", type=int, default=0,
@@ -145,7 +135,7 @@ def main() -> None:
         if args.pool:
             phones = phones[:args.pool]
     vendor = MockVendor(phones, args.seed, args.dup_pct, args.unknown_pct, args.invalid_pct)
-    sink = PubSubSink(settings.project) if args.sink == "pubsub" else StdoutSink()
+    sink = PubSubSink(settings.project)
 
     sent = 0
     try:

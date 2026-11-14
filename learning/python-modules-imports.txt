@@ -1,0 +1,314 @@
+PYTHON BASICS: FILES, IMPORTS, __main__, FOLDERS, PIP INSTALL -e
+=================================================================
+
+Topics:
+  1. Module vs package
+  2. Using functions from another .py file
+  3. "Loose code" and if __name__ == "__main__"
+  4. Importing from a different folder
+  5. What site-packages is
+  6. pip install vs pip install -e
+  7. How this connects to the cdp repo
+
+
+-----------------------------------------------------------------
+1. MODULE VS PACKAGE
+-----------------------------------------------------------------
+
+Module  : one .py file.               config.py is a module.
+Package : a folder of modules that you import by the folder's name.
+          cdp_common/ is a package, so you can write:
+
+              from cdp_common.config import REPO_ROOT
+
+Short version: a file is a module, and a folder you import through is a package.
+
+
+-----------------------------------------------------------------
+2. USING FUNCTIONS FROM ANOTHER .py FILE
+-----------------------------------------------------------------
+
+greet.py
+    def say_hello(name):
+        return f"Hello, {name}"
+
+main.py (in the SAME folder as greet.py)
+
+    Way 1: import the file, then call through its name
+        import greet                     # file name without .py
+        print(greet.say_hello("Arun"))
+
+    Way 2: import only the function, then call it bare
+        from greet import say_hello
+        print(say_hello("Arun"))
+
+Run:  python main.py
+Both ways run the same code.
+  - Way 1 shows where each name comes from (greet.xxx).
+  - Way 2 is shorter.
+
+Rules:
+  - You can only import names defined at the TOP LEVEL of the file
+    (not a function nested inside another function).
+  - You reach a class's methods through the class, e.g. Settings.from_env().
+  - A name that starts with _ (like _helper) CAN still be imported.
+    The underscore is only a convention meaning "internal".
+
+
+-----------------------------------------------------------------
+3. LOOSE CODE AND  if __name__ == "__main__":
+-----------------------------------------------------------------
+
+KEY FACT: importing a file RUNS that file, top to bottom, once.
+
+"Loose code" = any line at the left edge of the file that is not
+inside a def (or class). It runs whenever the file runs, which
+includes when another file imports it.
+
+--- Version 1: no guard ---
+
+greet.py
+    def say_hello(name):
+        return f"Hello, {name}"
+
+    print(say_hello("Test"))        # <- loose code (a test line)
+
+main.py
+    from greet import say_hello
+    print(say_hello("Arun"))
+
+python main.py, step by step:
+    1. main.py reaches "from greet import say_hello"
+    2. Python runs ALL of greet.py:
+         - def creates the function   (prints nothing)
+         - the loose print runs       -> "Hello, Test"
+    3. Back in main.py, its print runs -> "Hello, Arun"
+
+Output:
+    Hello, Test      <- unwanted, came from greet.py's test line
+    Hello, Arun
+
+--- Version 2: with the guard ---
+
+greet.py
+    def say_hello(name):
+        return f"Hello, {name}"
+
+    if __name__ == "__main__":
+        print(say_hello("Test"))
+
+main.py stays the same.
+
+What is __name__?
+Python automatically creates a variable called __name__ inside every file.
+Its value depends on how the file was started:
+
+    How greet.py was started              __name__ inside greet.py
+    ------------------------------------  ------------------------
+    python greet.py  (run directly)       "__main__"
+    import greet / from greet import ...  "greet"
+
+python main.py
+    greet.py is imported, so __name__ = "greet"
+    "greet" == "__main__" is False, so the test print is skipped
+    Output:  Hello, Arun
+
+python greet.py
+    greet.py is run directly, so __name__ = "__main__"
+    The check is True, so the test print runs
+    Output:  Hello, Test
+
+In one line:
+    if __name__ == "__main__":  means  "run this block only when this file
+    is run directly, not when another file imports it."
+    One file can then be BOTH a library (imported) and a script (run).
+
+In the cdp repo:
+    The Cloud Run job runs  python -m cdp_sources.care.mock_vendor
+    -> that file is run directly -> its __main__ block starts the job.
+    The tests import the same file just to use its functions
+    -> the job does not start.
+
+
+-----------------------------------------------------------------
+4. IMPORTING FROM A DIFFERENT FOLDER
+-----------------------------------------------------------------
+
+Layout:
+    project/
+    +-- main.py
+    +-- helpers/
+        +-- greet.py
+
+main.py says:   from greet import say_hello
+Result:         ModuleNotFoundError: No module named 'greet'
+
+WHY: for an import, Python searches a fixed list of folders (sys.path):
+    1. the folder of the script you ran        (here: project/)
+    2. installed-package folders (site-packages)
+It looks for project/greet.py, which doesn't exist.
+Python does NOT search subfolders on its own.
+
+FIX 1: put the folder name in the import
+    from helpers.greet import say_hello
+    Python finds folder "helpers" in project/, goes in, and finds greet.py.
+    The dot means "go into this folder".
+    helpers is now a PACKAGE, and greet is a MODULE inside it.
+
+    You'll often see an empty __init__.py inside such folders:
+        helpers/
+        +-- __init__.py
+        +-- greet.py
+    It marks the folder as a package on purpose. Modern Python works
+    without it, but most projects (including cdp) include it.
+
+FIX 2: the folder isn't under the script at all
+
+    project/
+    +-- app/
+    |   +-- main.py
+    +-- libs/
+        +-- helpers/
+            +-- __init__.py
+            +-- greet.py
+
+    python app/main.py -> Python searches project/app/
+    helpers is not there, so the import fails again.
+
+    Option a) add the folder to the search list by hand (hacky, fragile)
+        import sys
+        sys.path.append("../libs")
+        from helpers.greet import say_hello
+        It breaks as soon as you run from a different folder.
+
+    Option b) INSTALL the package (the proper way)
+        Installing makes the package findable from site-packages, which
+        Python always searches. The import then works from any file.
+
+
+-----------------------------------------------------------------
+5. WHAT IS SITE-PACKAGES
+-----------------------------------------------------------------
+
+When you install Python (or create a .venv) you get a folder called
+site-packages, e.g.   .venv\Lib\site-packages\
+
+Python ALWAYS searches it on every import, no matter where your script is.
+
+"Installing a package" = getting it into site-packages so Python can find it.
+
+To be installable, a folder needs a pyproject.toml (or setup.py)
+that gives the package name and version:
+
+    libs/
+    +-- helpers/              <- the project folder (what you pip install)
+        +-- pyproject.toml    <- "this folder is installable"
+        +-- helpers/          <- the actual package
+            +-- __init__.py
+            +-- greet.py
+
+
+-----------------------------------------------------------------
+6. pip install  vs  pip install -e
+-----------------------------------------------------------------
+
+--- Normal install:  pip install libs/helpers ---
+
+pip COPIES the code into site-packages:
+
+    .venv\Lib\site-packages\
+    +-- helpers\
+        +-- __init__.py
+        +-- greet.py          <- a COPY
+
+Import works from anywhere.
+PROBLEM: you edit the original libs/helpers/helpers/greet.py
+    -> you run your code -> you still get the OLD behaviour
+    -> Python reads the COPY, which did not change
+    -> you'd have to run pip install again after every edit.
+Fine for libraries you only USE (like pytest).
+Annoying for code you are WRITING.
+
+--- Editable install:  pip install -e libs/helpers ---
+
+-e = editable. pip copies NO code. It leaves a small POINTER file:
+
+    .venv\Lib\site-packages\
+    +-- __editable__.helpers.pth   <- contains: C:\...\project\libs\helpers
+
+On every startup Python reads the .pth files in site-packages and adds
+the paths in them to its search list. So "import helpers" follows the
+pointer to YOUR ORIGINAL FOLDER.
+
+Edit greet.py -> run again -> the change takes effect immediately.
+There is only one copy of the file, the one you are editing.
+
+Comparison:
+                         Normal install            -e editable install
+    -------------------  ------------------------  ------------------------
+    In site-packages     a copy of the code        a pointer to your folder
+    You edit the source  no effect until reinstall takes effect immediately
+    Typical use          libraries you use         code you are developing
+
+
+-----------------------------------------------------------------
+7. HOW THIS CONNECTS TO THE CDP REPO
+-----------------------------------------------------------------
+
+Repo layout (the "FIX 2" situation):
+    cdp/
+    +-- libs/cdp_common/cdp_common/config.py
+    +-- pipelines/cdp_beam/...        <- wants cdp_common
+    +-- sources/cdp_sources/...       <- wants cdp_common
+
+pipelines and sources both need  from cdp_common.config import ...
+but cdp_common lives in a completely different folder.
+
+requirements-dev.txt:
+    -e libs/cdp_common
+    -e sources
+    -e pipelines
+    pytest>=8
+
+Install with:   .venv\Scripts\pip install -r requirements-dev.txt
+(-r = read the file and install each line)
+
+    Line                 What happens
+    -------------------  ----------------------------------------------
+    -e libs/cdp_common   pointer to your libs/cdp_common folder
+    -e sources           pointer to your sources folder
+    -e pipelines         pointer to your pipelines folder
+    pytest>=8            normal install: pytest is COPIED in
+                         (you never edit pytest)
+
+Results:
+  - Code in pipelines/ can do  from cdp_common.config import ...
+    even though cdp_common lives in libs/, because the pointer makes it findable.
+  - When you edit any of the three packages, tests see the change immediately.
+
+Why REPO_ROOT needs -e:
+    config.py works out the repo location from WHERE THE FILE ITSELF
+    SITS ON DISK (it goes up a few parent folders).
+  - With -e: Python runs the original
+        cdp/libs/cdp_common/cdp_common/config.py
+    Going up a few folders lands on cdp/            -> correct
+  - With a normal install: Python runs the copy
+        .venv/Lib/site-packages/cdp_common/config.py
+    Going up a few folders lands inside .venv       -> wrong
+    -> tests that read contracts/ fail.
+
+
+-----------------------------------------------------------------
+QUICK RECAP
+-----------------------------------------------------------------
+  - A .py file is a module, and a folder you import through is a package.
+  - import / from ... import  -> run the file once, then use its names.
+  - Loose code runs on import. Wrap test/script code in
+        if __name__ == "__main__":
+  - Python only searches: the script's own folder + site-packages.
+  - Code in another folder -> install it.
+  - pip install     = copy into site-packages (edits need a reinstall).
+  - pip install -e  = pointer to your folder  (edits take effect immediately).
+  - The cdp repo uses -e for its own three packages, and REPO_ROOT relies on it.
+
+NEXT TOPIC: pyproject.toml, the file that makes a folder installable.

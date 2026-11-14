@@ -5,21 +5,35 @@
 #   gcloud builds submit --project=$PROJECT --region=us-central1 --config=cicd/deploy.yaml `
 #     --service-account="projects/$PROJECT/serviceAccounts/cdp-deployer@$PROJECT.iam.gserviceaccount.com" `
 #     --substitutions="_TAG=$TAG"
+
+
+# Substitutions: this file's parameters.
+#   - What:     before any step runs, Cloud Build replaces each ${_NAME} in the YAML text with its value.
+#   - Defaults: the values below; --substitutions=_NAME=x overrides one for a single run.
+#   - Naming:   custom names must start with _ (pattern _[A-Z0-9_]+) so they can't clash with built-ins.
+#   - Built-in: PROJECT_ID, BUILD_ID, ... are set by Cloud Build; PROJECT_ID = the --project the build runs in.
+#   - Scope:    ${_TAG} inside this YAML works (replaced as text); .sh files only see env vars (options.env).
 substitutions:
   _ENV: dev
   _REGION: us-central1
   _TAG: "" # required: image version, passed with --substitutions
+  # Built from PROJECT_ID (needs dynamicSubstitutions); not normally overridden.
   _REGISTRY: us-central1-docker.pkg.dev/${PROJECT_ID}/cdp
   _TF_STATE_BUCKET: ${PROJECT_ID}-tfstate
 
 options:
-  dynamicSubstitutions: true
+  dynamicSubstitutions: true # lets _REGISTRY resolve ${PROJECT_ID}; on for triggers, must be set for gcloud builds submit
   logging: CLOUD_LOGGING_ONLY
   machineType: E2_HIGHCPU_8
   env:
     - ENV=${_ENV}
     - REGION=${_REGION}
     - TF_STATE_BUCKET=${_TF_STATE_BUCKET}
+    # gcloud needs a project for most commands. It looks for one in this order:
+    #   1. A --project flag on the command
+    #   2. The CLOUDSDK_CORE_PROJECT environment variable (set here)
+    #   3. The saved gcloud config
+    # CLOUDSDK_<SECTION>_<PROPERTY> is gcloud's own env-var naming: this sets core/project.
     - CLOUDSDK_CORE_PROJECT=${PROJECT_ID}
 
 steps:
@@ -37,10 +51,20 @@ steps:
     args: ["-c", "pip install -q -r requirements-dev.txt && python -m pytest pipelines/tests -q -p no:warnings"]
     waitFor: ["check-inputs"]
 
+  # Root pom.xml lists the Java modules (serving/customer-api). -q: errors only; -B: batch mode,
+  # no prompts or progress bars. Runs in parallel with test-python (both wait only for check-inputs).
   - id: test-java
     name: maven:3.9.9-eclipse-temurin-21
     args: ["mvn", "-q", "-B", "test"]
     waitFor: ["check-inputs"]
+
+  # TEMPORARY, for learning: fails on purpose after both test steps pass. A non-zero exit fails the
+  # build; Cloud Build then cancels steps still running and starts no new ones. Remove before real use.
+  # - id: fail-on-purpose
+  #   name: gcr.io/cloud-builders/docker
+  #   entrypoint: bash
+  #   args: ["-c", "echo 'Failing on purpose' >&2; exit 1"]
+  #   waitFor: ["test-python", "test-java"]
 
   # -- Build and push images (tagged with _TAG) --
   - id: build-customer-api
@@ -70,6 +94,14 @@ steps:
         done
     waitFor: ["build-customer-api", "build-sources", "build-care-pipeline"]
 
+  # -- Deploy (Terraform) --
+  - id: deploy-data
+    name: hashicorp/terraform:1.15.1
+    entrypoint: sh
+    args: ["cicd/tf.sh", "data", "apply"]
+    waitFor: ["push-images"]
+
+  # Must come after deploy-data: waitFor can only name steps defined earlier in the file.
   - id: build-flex-template
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
     args:
@@ -81,14 +113,8 @@ steps:
       - --image=${_REGISTRY}/care-pipeline:${_TAG}
       - --sdk-language=PYTHON
       - --metadata-file=pipelines/care-template-metadata.json
-    waitFor: ["push-images"]
-
-  # -- Deploy (Terraform) --
-  - id: deploy-data
-    name: hashicorp/terraform:1.15.1
-    entrypoint: sh
-    args: ["cicd/tf.sh", "data", "apply"]
-    waitFor: ["push-images"]
+    # deploy-data creates the -cdp-dataflow bucket this file is written to.
+    waitFor: ["push-images", "deploy-data"]
 
   - id: deploy-runtime
     name: hashicorp/terraform:1.15.1

@@ -6,11 +6,6 @@ variable "region" {
   type = string
 }
 
-variable "env" {
-  description = "Environment name (dev, prod); one GCP project per environment"
-  type        = string
-}
-
 variable "labels" {
   type    = map(string)
   default = {}

@@ -13,9 +13,3 @@ cdp:
     project: ${GCP_PROJECT:}
     instance: ${SPANNER_INSTANCE:cdp-instance}
     database: ${SPANNER_DATABASE:cdp}
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics

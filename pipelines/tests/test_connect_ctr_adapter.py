@@ -9,6 +9,8 @@ from cdp_beam.adapters.connect_ctr import to_canonical
 from cdp_beam.dead_letter import RejectedRecord
 from cdp_beam.transforms.parse_validate import validate_contact_ended
 
+# Path's "/" joins path parts; read_text() gives the file as a str; json.loads turns it into a dict.
+# Runs once, when pytest imports this file, and every test copies it (deepcopy) before changing it.
 SAMPLE = json.loads((REPO_ROOT / "contracts" / "vendor" / "connect" / "ctr.sample.json").read_text())
 
 
@@ -27,12 +29,16 @@ def test_maps_vendor_record_to_canonical_event():
         "queue": "Billing",
         "summary": "Customer asked about higher bill. Explained one-time activation fee.",
     }
+    # No assert needed: passes unless it raises. Proves the adapter's output also satisfies the
+    # canonical contract, as in the pipeline where every adapted event goes through Validate next.
     validate_contact_ended(event)
 
 
 def test_missing_disconnect_timestamp_is_rejected():
     record = copy.deepcopy(SAMPLE)
     del record["DisconnectTimestamp"]
+    # Fails the test if the block does not raise RejectedRecord. e is pytest's ExceptionInfo wrapper;
+    # e.value (the raised exception) is only filled in after the with block ends.
     with pytest.raises(RejectedRecord) as e:
         to_canonical(record)
     assert e.value.code == "MISSING_FIELD"
@@ -101,3 +107,4 @@ def test_unknown_intent_fails_validation():
     with pytest.raises(RejectedRecord) as e:
         validate_contact_ended(to_canonical(record))
     assert e.value.code == "INVALID_VALUE"
+

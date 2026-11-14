@@ -1,19 +1,14 @@
 """Generate the ground-truth world of customers (people + phone numbers).
 
 Writes people.parquet to CDP_WORLD_URI (a gs:// path). Seeded, so the same
---count and --seed always produce the same people.
-
-  python -m cdp_sources.world.generator --count 10000
+count and seed always produce the same people. Run through cdp_sources.world.seed.
 """
 
-import argparse
 import random
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 from faker import Faker
-
-from cdp_common.config import Settings
 
 AREA_CODES = ["206", "253", "360", "425", "509", "212", "312", "415", "503", "617",
               "702", "713", "720", "786", "808", "857", "901", "913", "949", "972"]
@@ -54,15 +49,3 @@ def write_world(count: int, seed: int, uri: str) -> None:
     people = generate_people(count, seed)
     pq.write_table(pa.Table.from_pylist(people), uri)
     print(f"Wrote {len(people)} people to {uri}")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--count", type=int, default=10_000)
-    parser.add_argument("--seed", type=int, default=42)
-    args = parser.parse_args()
-    write_world(args.count, args.seed, Settings.from_env().world_uri)
-
-
-if __name__ == "__main__":
-    main()

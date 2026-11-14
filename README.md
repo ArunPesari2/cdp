@@ -73,20 +73,155 @@ so the foundation is applied by an admin with their own login.
 
 ## One-time setup (platform admin)
 
-```powershell
-# 0. Log in (gcloud CLI only)
-gcloud auth login
+**Step 0. Log in**
 
-# 1. Terraform state bucket
+```powershell
+gcloud auth login
+```
+
+Signs the gcloud CLI in as you. Terraform does not use this session directly (see
+[How Terraform authenticates](#how-terraform-authenticates)).
+
+**Step 1. Terraform state bucket**
+
+```powershell
 gcloud storage buckets create gs://learning-dev-2026-07-tfstate --location=us-central1 --uniform-bucket-level-access
 gcloud storage buckets update gs://learning-dev-2026-07-tfstate --versioning
+```
 
-# 2. Foundation stack (Terraform calls GCP as you, using a token from your gcloud login)
+- `create`: bucket for every stack's Terraform state.
+- `--uniform-bucket-level-access`: permissions from IAM only, no per-object ACLs.
+- `--versioning`: keeps old state versions, so a bad apply or delete can be undone
+  (`gcloud storage ls -a` lists them).
+
+**Step 2. Foundation stack**
+
+```powershell
 cd platform/terraform/stacks/foundation
 $env:GOOGLE_OAUTH_ACCESS_TOKEN = gcloud auth print-access-token
-terraform init -backend-config=bucket=learning-dev-2026-07-tfstate -backend-config=prefix=cdp/dev/foundation
-terraform apply -var-file=../../envs/dev/terraform.tfvars
+terraform init "-backend-config=bucket=learning-dev-2026-07-tfstate" "-backend-config=prefix=cdp/dev/foundation"
+terraform plan "-var-file=../../envs/dev/terraform.tfvars" "-out=foundation.tfplan"
+terraform apply "foundation.tfplan"
+Remove-Item "foundation.tfplan"
 ```
+
+- `GOOGLE_OAUTH_ACCESS_TOKEN`: a short-lived token from your gcloud login, so Terraform calls GCP
+  as you.
+- `terraform init`, in order:
+  1. Reads the `terraform {}` block in `main.tf` and checks the Terraform version:
+     - `required_version = ">= 1.5"` is compared with the binary you run (`terraform version`).
+     - Older: stops with "Unsupported Terraform Core version" before touching backend or providers.
+     - Only a minimum: any Terraform 1.5 or newer works.
+  2. Fills the empty `backend "gcs" {}` with `bucket` and `prefix` from `-backend-config`
+     (backend blocks cannot use variables).
+  3. Connects to the bucket with your token and confirms access:
+     - State file location (bucket + prefix + workspace `default`):
+       `gs://learning-dev-2026-07-tfstate/cdp/dev/foundation/default.tfstate`.
+     - Already exists: left as is.
+     - Does not exist (first ever init): creates an empty `default.tfstate` in the bucket:
+       1. Locks: creates `default.tflock` in the bucket with `"Operation": "init"`.
+       2. Creates `default.tfstate` in the bucket with `"serial": 1` and `"resources": []`.
+       3. Unlocks: deletes `default.tflock` from the bucket.
+  4. Saves the backend settings in `.terraform/terraform.tfstate` (local metadata, not your state):
+     - Why: each Terraform command is a separate run that remembers nothing. `plan`/`apply`/`destroy`
+       do not take `-backend-config` and the `backend "gcs" {}` block is empty, so they read the
+       bucket and prefix from this file to find the real state.
+     - Holds only the location (bucket, prefix, a hash of them), no resources. The real state is
+       `default.tfstate` in the bucket.
+     - The hash lets a later `init` notice a different bucket or prefix and stop with "Backend
+       configuration changed" (`-migrate-state` or `-reconfigure`), instead of silently using another state.
+     - Safe to delete (`.terraform/` is in `.gitignore`); the next `init` recreates it.
+  5. Installs the `hashicorp/google` provider, depending on `.terraform.lock.hcl` (which pins the
+     provider version, not the Terraform version):
+     - Lock file already exists (this repo, committed in git):
+       1. Reads the exact version recorded in it.
+       2. Downloads that version into `.terraform/providers/`.
+       3. Verifies the download against the checksums in the lock file.
+       4. Leaves the lock file unchanged.
+     - Lock file does not exist (first ever init of a new stack):
+       1. Picks the newest version matching `~> 6.0` in `main.tf`.
+       2. Downloads that version into `.terraform/providers/`.
+       3. Creates `.terraform.lock.hcl` with that version and its checksums (commit it to git).
+  6. Creates no GCP resources. (`init -upgrade` re-picks the newest version and rewrites the lock
+     file.)
+- `terraform plan "-var-file=../../envs/dev/terraform.tfvars" "-out=foundation.tfplan"`, in order:
+  1. Locks the state by creating `gs://learning-dev-2026-07-tfstate/cdp/dev/foundation/default.tflock`:
+     - A small JSON file: lock ID, operation, who, when, Terraform version.
+     - Created only if absent, so two runs can never both hold the lock.
+     - Already there (another run, or a crashed one): fails with `Error acquiring the state lock`.
+       Wait, or for a stale lock run `terraform force-unlock <LOCK_ID>`.
+     - Works on the first plan too; only the bucket must exist.
+  2. Reads the state from the bucket, `gs://learning-dev-2026-07-tfstate/cdp/dev/foundation/default.tfstate` (created by `init`):
+     - Loads the resources Terraform already manages.
+     - First plan: `"resources": []`, so Terraform manages nothing yet.
+  3. Refreshes: asks GCP for the current settings of every resource in the state (nothing to ask
+     on the first plan).
+  4. Compares that with `main.tf` + `envs/dev/terraform.tfvars` and prints each change:
+     `+` create, `~` update, `-/+` replace, `-` destroy (first plan: every resource is `+`).
+     Terraform checks GCP only for resources in the state, plus `data` blocks:
+
+     | Case | GCP checked? | Result |
+     | --- | --- | --- |
+     | In `main.tf` and in state | Yes | No change, `~` update, or `-/+` replace |
+     | In `main.tf`, not in state | No | `+ create`; if it already exists in GCP, `apply` fails with "already exists" (fix: `terraform import`) |
+     | Not in `main.tf`, in state | Yes | `- destroy` |
+     | In neither (created by hand) | No | Invisible to Terraform; never changed |
+     | `data` blocks (e.g. `data "google_project" "this"`) | Yes | Always read; never changed |
+  5. Saves the exact changes to `foundation.tfplan` (git-ignored).
+  6. Deletes `default.tflock`. Nothing changed in GCP, and the state file is not modified.
+  7. Review the output; if anything is unexpected, stop here.
+- `terraform apply "foundation.tfplan"`, in order:
+  1. Reads `foundation.tfplan`:
+     - Must be run with the same Terraform and provider versions that made the plan.
+     - No `yes` prompt: the plan was already reviewed.
+  2. Locks the state by creating `default.tflock` in the bucket (same rules as in `plan`).
+  3. Checks the state has not changed since the plan was made:
+     - `foundation.tfplan` is a zip holding a copy of the state taken at plan time:
+
+       | File in the zip | Holds |
+       | --- | --- |
+       | `tfplan` | The planned changes and variable values |
+       | `tfstate` | State after refresh, with its `lineage` and `serial` |
+       | `tfstate-prev` | State as read from the bucket, before refresh |
+       | `tfconfig/` | Copy of the `.tf` files at plan time |
+       | `.terraform.lock.hcl` | Provider versions and checksums used |
+
+     - In simple terms: `tfstate-prev` = recorded, `tfstate` = current (real GCP),
+       `tfplan` = changes. Future state = `tfstate` + `tfplan`, written by `apply`.
+     - Example: a bucket managed by Terraform is deleted by hand in the console, then `plan` runs:
+
+       | File | The bucket |
+       | --- | --- |
+       | `tfstate-prev` | Listed: the bucket's state still records it |
+       | `tfstate` | Not listed: refresh got "404 not found" from GCP |
+       | `tfplan` | `+ create`: `main.tf` still wants it |
+
+       The plan prints `has been deleted` (from `tfstate-prev` vs `tfstate`) and `will be created`
+       (from `tfplan`). `apply` creates a new, empty bucket; the old files do not come back.
+
+     - `lineage`: random ID set once when the state is created; identifies this state.
+     - `serial`: counter, +1 on every state write.
+     - Compares `lineage` and `serial` in the plan's `tfstate` with the state in the bucket:
+       - Equal: nobody wrote the state since the plan; continue.
+       - Different (another apply ran in between): fails with `Saved plan is stale`; re-run `plan`.
+     - Does not detect changes made directly in GCP after the plan (the serial does not move), so
+       keep the gap between `plan` and `apply` short.
+     - The zip holds state and variable values, so it can contain secrets: git- and
+       gcloud-ignored; delete it after apply. Inspect with `terraform show foundation.tfplan`.
+  4. Makes the changes through the GCP APIs, in dependency order, up to 10 at a time:
+     - Wave 1: the 14 APIs (`google_project_service`).
+     - Wave 2: service accounts, Artifact Registry, budget (they `depends_on` the APIs).
+     - Wave 3: IAM bindings (they reference the service accounts and the repository).
+  5. Writes the state to the bucket, `gs://learning-dev-2026-07-tfstate/cdp/dev/foundation/default.tfstate`, as resources finish:
+     - About every 20 seconds during the apply, and once more at the end.
+     - Each write overwrites the file; bucket versioning keeps every previous version
+       (`gcloud storage ls -a` shows them).
+     - View it: `gcloud storage ls gs://learning-dev-2026-07-tfstate/cdp/dev/foundation/` or `terraform state list`.
+  6. If a resource fails:
+     - Resources already created stay and are recorded in the state (no rollback).
+     - Fix the cause, then `plan` and `apply` again; only the remaining changes are made.
+  7. Deletes `default.tflock` from the bucket.
+  8. Prints the stack outputs (`outputs.tf`). `foundation.tfplan` is now used up; delete it.
 
 ### How Terraform authenticates
 
@@ -107,7 +242,80 @@ The token expires after about an hour; if an apply fails with an authentication 
 its own and refreshes automatically. Use one method or the other, not both.
 
 To see the HTTP calls Terraform makes (tokens are hidden in the log):
-`$env:TF_LOG = "DEBUG"; terraform plan -var-file=../../envs/dev/terraform.tfvars`
+`$env:TF_LOG = "DEBUG"; terraform plan "-var-file=../../envs/dev/terraform.tfvars"`
+
+### Terraform commands (copy-paste)
+
+Run from the repository root in PowerShell. Deploys normally go through `cicd/deploy.yaml`; use these
+to inspect a stack, or for the foundation stack, which only an admin applies.
+
+Quote each whole `-flag=value` argument: Windows PowerShell splits an unquoted argument that starts
+with `-` at a `.` (`-out=foundation.tfplan` arrives as `-out=foundation` and `.tfplan`), and
+Terraform fails with "Too many command line arguments".
+
+**1. Pick the stack and log in (every new PowerShell window)**
+
+```powershell
+$PROJECT = "learning-dev-2026-07"
+$BUCKET  = "$PROJECT-tfstate"
+$STACK   = "foundation"   # foundation | data | runtime
+$env:GOOGLE_OAUTH_ACCESS_TOKEN = gcloud auth print-access-token
+cd platform/terraform/stacks/$STACK
+terraform init "-backend-config=bucket=$BUCKET" "-backend-config=prefix=cdp/dev/$STACK"
+```
+
+**2. Plan and apply**
+
+```powershell
+# foundation or data
+terraform plan "-var-file=../../envs/dev/terraform.tfvars" "-out=$STACK.tfplan"
+terraform apply "$STACK.tfplan"
+Remove-Item "$STACK.tfplan"
+
+# runtime also needs the image tags (use the _TAG of a deploy that pushed images)
+$TAG = "v20261106-120000"
+$REG = "us-central1-docker.pkg.dev/$PROJECT/cdp"
+terraform plan "-var-file=../../envs/dev/terraform.tfvars" "-out=$STACK.tfplan" `
+  "-var=customer_api_image=$REG/customer-api:$TAG" "-var=sources_image=$REG/sources:$TAG"
+terraform apply "$STACK.tfplan"
+Remove-Item "$STACK.tfplan"
+```
+
+**3. Look at the state**
+
+```powershell
+terraform state list                                   # every resource Terraform manages
+terraform state show google_spanner_instance.cdp       # one resource's recorded attributes
+terraform output                                       # the stack outputs
+terraform state pull | Select-String '"serial"|"lineage"'          # serial and lineage
+gcloud storage ls -a "gs://$BUCKET/cdp/dev/$STACK/"    # every saved version of the state file
+```
+
+**4. Fix problems**
+
+```powershell
+# "Error acquiring the state lock" after a killed run: the ID is in the error message
+terraform force-unlock <LOCK_ID>
+
+# Resource exists in GCP but not in the state ("already exists" on apply)
+terraform import google_cloud_run_v2_service.customer_api "projects/$PROJECT/locations/us-central1/services/customer-api"
+
+# Restore an older state version (bypasses the lineage/serial checks; copy the #generation from ls -a)
+gcloud storage cp "gs://$BUCKET/cdp/dev/$STACK/default.tfstate#<GENERATION>" "gs://$BUCKET/cdp/dev/$STACK/default.tfstate"
+```
+
+**5. Destroy the runtime stack (normally `cicd/teardown.yaml`, which stops the Dataflow job first)**
+
+```powershell
+terraform destroy "-var-file=../../envs/dev/terraform.tfvars" `
+  "-var=customer_api_image=$REG/customer-api:$TAG" "-var=sources_image=$REG/sources:$TAG"
+```
+
+**6. Back to the repository root**
+
+```powershell
+cd ../../../..
+```
 
 ## Day to day
 

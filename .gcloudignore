@@ -12,6 +12,7 @@
 **/.terraform/
 **/*.tfstate
 **/*.tfstate.backup
+**/*.tfplan
 **/*.egg-info/
 docs/
 learning/

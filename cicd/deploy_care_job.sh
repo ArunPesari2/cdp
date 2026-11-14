@@ -43,6 +43,8 @@ else
   echo "== Starting a new ${JOB_NAME} job"
 fi
 
+# No --project flag: gcloud reads the project from CLOUDSDK_CORE_PROJECT (set in cicd/deploy.yaml)
+# and sends it to Dataflow in the URL of its launch request.
 JOB_ID=$(gcloud dataflow flex-template run "${JOB_NAME}" "${ARGS[@]}")
 echo "== Job ${JOB_ID} launched from ${TEMPLATE}; waiting until it is running"
 

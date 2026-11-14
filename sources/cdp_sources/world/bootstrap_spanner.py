@@ -2,8 +2,7 @@
 
 Stand-in for the CRM CDC flow (Flow A) until the mock CRM exists. customer_id
 is derived deterministically from person_id, so re-running is idempotent.
-
-  python -m cdp_sources.world.bootstrap_spanner
+Run through cdp_sources.world.seed.
 """
 
 import uuid
@@ -53,11 +52,3 @@ def load(settings: Settings) -> None:
             )
 
     print(f"Loaded {len(people)} customers and {2 * len(people)} identities into Spanner")
-
-
-def main() -> None:
-    load(Settings.from_env())
-
-
-if __name__ == "__main__":
-    main()

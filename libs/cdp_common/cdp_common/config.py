@@ -7,6 +7,9 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+# __file__ is this file's path; resolve() makes it absolute; parents[3] climbs
+# cdp_common -> libs/cdp_common -> libs -> repo root. Correct only with the editable
+# install (-e libs/cdp_common), which imports this file from the repo, not site-packages.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # Pub/Sub names used by the care slice (created by platform/terraform/stacks/runtime).

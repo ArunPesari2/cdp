@@ -15,6 +15,8 @@ SAMPLE = json.loads((REPO_ROOT / "contracts" / "vendor" / "connect" / "ctr.sampl
 KNOWN_PHONE, CUSTOMER_ID = "+12065551488", "cust-1"
 
 
+# Stands in for SpannerIdentityLookup: same open()/find() methods, so ResolveIdentity accepts it
+# (duck typing, no shared base class). build() takes the lookup as an argument to allow this.
 class FakeLookup:
     def open(self):
         pass
@@ -61,3 +63,7 @@ def test_good_duplicate_unknown_and_invalid_records():
                       ("adapter", "INVALID_JSON"),
                       ("adapter", "INVALID_ENCODING")]),
             label="dead_letters")
+        
+# def test_intentional_failure():
+#         assert False, "INTENTIONAL FAILURE FOR CLOUD BUILD TEST"
+

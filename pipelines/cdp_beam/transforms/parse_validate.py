@@ -61,6 +61,8 @@ class ValidateCanonical(beam.DoFn):
         try:
             self.validator(event)
             yield event
+        # Invalid event: not yielded on the main output, so it stops here; it goes to ops.dead_letter
+        # instead and the job keeps running. Any other exception type is not caught and fails the bundle.
         except RejectedRecord as e:
             self.rejected.inc()
             yield beam.pvalue.TaggedOutput(

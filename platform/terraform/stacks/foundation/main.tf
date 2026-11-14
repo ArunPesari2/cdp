@@ -87,32 +87,6 @@ resource "google_artifact_registry_repository" "cdp" {
   }
 }
 
-# ── Runtime identities ────────────────────────────────────────────────────────
-
-# dataflow.developer: the Flex Template launcher runs as this account and must find and
-# update the running job on each release (in-place streaming update).
-resource "google_project_iam_member" "dataflow_worker" {
-  for_each = toset(["roles/dataflow.worker", "roles/dataflow.developer", "roles/monitoring.metricWriter", "roles/logging.logWriter"])
-  project  = var.project_id
-  role     = each.value
-  member   = "serviceAccount:${google_service_account.sa["dataflow"].email}"
-}
-
-# Google client libraries (Spanner) export their own built-in metrics.
-resource "google_project_iam_member" "client_metrics" {
-  for_each = toset(["sources", "customer_api"])
-  project  = var.project_id
-  role     = "roles/monitoring.metricWriter"
-  member   = "serviceAccount:${google_service_account.sa[each.value].email}"
-}
-
-resource "google_artifact_registry_repository_iam_member" "dataflow_reader" {
-  location   = google_artifact_registry_repository.cdp.location
-  repository = google_artifact_registry_repository.cdp.name
-  role       = "roles/artifactregistry.reader"
-  member     = "serviceAccount:${google_service_account.sa["dataflow"].email}"
-}
-
 # ── CD identity (cdp-deployer) ────────────────────────────────────────────────
 
 resource "google_project_iam_member" "deployer" {
@@ -129,7 +103,9 @@ resource "google_artifact_registry_repository_iam_member" "deployer_writer" {
   member     = "serviceAccount:${google_service_account.sa["deployer"].email}"
 }
 
+# Deployment is different and Running is different in GCP.
 # The deployer may run workloads as the runtime identities, and only those.
+# . The deployer creates the Cloud Run service and stamps "run as cdp-customer-api" on it. From then on, every request the service makes uses cdp-customer-api's permissions, not the deployer's
 resource "google_service_account_iam_member" "deployer_act_as" {
   for_each           = toset(local.runtime_identities)
   service_account_id = google_service_account.sa[each.value].name
@@ -145,8 +121,43 @@ resource "google_service_account_iam_member" "deployer_impersonates_smoke" {
   member             = "serviceAccount:${google_service_account.sa["deployer"].email}"
 }
 
+# ── Runtime identities ────────────────────────────────────────────────────────
+
+# dataflow.developer: the Flex Template launcher runs as this account and must find and
+# update the running job on each release (in-place streaming update).
+# keep it simple single SA for dataflow must have all roles required.
+resource "google_project_iam_member" "dataflow_worker" {
+  for_each = toset(["roles/dataflow.worker", "roles/dataflow.developer", "roles/monitoring.metricWriter", "roles/logging.logWriter"])
+  project  = var.project_id
+  role     = each.value
+  member   = "serviceAccount:${google_service_account.sa["dataflow"].email}"
+}
+
+resource "google_artifact_registry_repository_iam_member" "dataflow_reader" {
+  location   = google_artifact_registry_repository.cdp.location
+  repository = google_artifact_registry_repository.cdp.name
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${google_service_account.sa["dataflow"].email}"
+}
+
+
+# Google client libraries (Spanner) export their own built-in metrics.
+resource "google_project_iam_member" "client_metrics" {
+  for_each = toset(["sources", "customer_api"])
+  project  = var.project_id
+  role     = "roles/monitoring.metricWriter"
+  member   = "serviceAccount:${google_service_account.sa[each.value].email}"
+}
+
 # ── Budget alert ──────────────────────────────────────────────────────────────
 
+# `data` reads an existing thing from GCP's API on every plan; it never creates or deletes it.
+# The project was created by hand outside Terraform, so it is read here, not a `resource`.
+# Empty {} means project_id falls back to the provider's `project` (var.project_id, from
+# terraform.tfvars), so the call is GET .../projects/learning-dev-2026-07. GCP returns the
+# project's record and the provider exposes it as computed attributes: number, name, ...
+# The budget filter needs the number, which Google assigned at creation and is in no file here.
+# "this" is only a local name (convention for "the only one of this type").
 data "google_project" "this" {}
 
 resource "google_billing_budget" "cdp" {
