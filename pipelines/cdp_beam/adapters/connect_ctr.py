@@ -10,6 +10,7 @@ Field mapping (docs/contracts/care-data-contract.md):
   Disconnect - Initiation (seconds) -> payload.duration_sec (rounded)
   Queue.Name                        -> payload.queue
   Attributes.summary                -> payload.summary
+  Attributes.sequence_id (optional) -> sequence_id (integer; vendor attributes are strings)
 
 Vendor timestamps must carry an explicit offset (Z or +hh:mm); the time zone is never guessed.
 """
@@ -65,7 +66,26 @@ def _agent_id(username: str) -> str:
     return f"A-{username[len('agent'):]}" if username.startswith("agent") else username
 
 
+def _sequence_id(record) -> int | None:
+    """Optional running number the source puts on each contact (resends repeat it)."""
+    value = _lookup(record, "Attributes", "sequence_id")
+    if value is None:
+        return None
+    if not value.isdigit():
+        raise RejectedRecord("INVALID_TYPE", f"Attributes.sequence_id={value!r} is not a whole number")
+    return int(value)
+
+
 def to_canonical(record: dict) -> dict:
+    sequence_id = _sequence_id(record)
+    try:
+        return _to_canonical(record, sequence_id)
+    except RejectedRecord as e:
+        e.sequence_id = sequence_id  # carried into the dead letter
+        raise
+
+
+def _to_canonical(record: dict, sequence_id: int | None) -> dict:
     contact_id = _required(record, "ContactId")
     started = _parse_ts(_required(record, "InitiationTimestamp"), "InitiationTimestamp")
     ended = _parse_ts(_required(record, "DisconnectTimestamp"), "DisconnectTimestamp")
@@ -83,6 +103,7 @@ def to_canonical(record: dict) -> dict:
         "event_ts": _utc_iso(ended),
         "source": "care",
         "vendor": VENDOR,
+        "sequence_id": sequence_id,
         "identifiers": {"phone": _required(record, "CustomerEndpoint", "Address")},
         "payload": {
             "channel": _CHANNELS[vendor_channel],

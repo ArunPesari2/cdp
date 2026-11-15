@@ -101,6 +101,33 @@ def test_unknown_channel_is_rejected():
     assert e.value.code == "UNSUPPORTED_CHANNEL"
 
 
+def test_sequence_id_is_optional():
+    assert to_canonical(SAMPLE)["sequence_id"] is None  # the sample, like a real vendor, sends none
+
+
+def test_sequence_id_is_read_as_a_number():
+    record = copy.deepcopy(SAMPLE)
+    record["Attributes"]["sequence_id"] = "42"
+    assert to_canonical(record)["sequence_id"] == 42
+
+
+def test_non_numeric_sequence_id_is_rejected():
+    record = copy.deepcopy(SAMPLE)
+    record["Attributes"]["sequence_id"] = "4x"
+    with pytest.raises(RejectedRecord) as e:
+        to_canonical(record)
+    assert e.value.code == "INVALID_TYPE"
+
+
+def test_rejected_record_keeps_its_sequence_id():
+    record = copy.deepcopy(SAMPLE)
+    record["Attributes"]["sequence_id"] = "7"
+    del record["DisconnectTimestamp"]
+    with pytest.raises(RejectedRecord) as e:
+        to_canonical(record)
+    assert (e.value.code, e.value.sequence_id) == ("MISSING_FIELD", 7)
+
+
 def test_unknown_intent_fails_validation():
     record = copy.deepcopy(SAMPLE)
     record["Attributes"]["intent"] = "pizza_order"

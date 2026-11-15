@@ -1,12 +1,15 @@
 # Stop the care pipeline (Dataflow), then destroy the hourly-billed runtime stack (Spanner, Pub/Sub,
 # Cloud Run). Runs as cdp-deployer.
-# BigQuery history, buckets, images and identities are kept. Run cicd/deploy.yaml to bring it back.
+# BigQuery history is deleted (tables dropped) unless _WIPE_BIGQUERY=false; buckets, images and
+# identities are kept. Run cicd/deploy.yaml to bring it back.
 # Started by hand from the repository root:
 #   $PROJECT = "learning-dev-2026-07"
 #   gcloud builds submit --project=$PROJECT --region=us-central1 --config=cicd/teardown.yaml `
 #     --service-account="projects/$PROJECT/serviceAccounts/cdp-deployer@$PROJECT.iam.gserviceaccount.com"
+# To keep the BigQuery history, add: --substitutions="_WIPE_BIGQUERY=false"
 substitutions:
   _ENV: dev
+  _WIPE_BIGQUERY: "true"
   _REGION: us-central1
   _TF_STATE_BUCKET: ${PROJECT_ID}-tfstate
   # Same pinned gcloud image as cicd/deploy.yaml (see the note there); keep the two in step.
@@ -19,14 +22,27 @@ options:
     - ENV=${_ENV}
     - REGION=${_REGION}
     - TF_STATE_BUCKET=${_TF_STATE_BUCKET}
+    - WIPE_BIGQUERY=${_WIPE_BIGQUERY}
     - CLOUDSDK_CORE_PROJECT=${PROJECT_ID}
 
 steps:
+  # Stop the source first, so nothing is still publishing while the pipeline and topic go away.
+  - id: stop-care-vendor
+    name: ${_GCLOUD_IMAGE}
+    entrypoint: bash
+    args: ["cicd/stop_care_vendor.sh"]
+
   # cancel or drain, per platform/terraform/envs/<env>/care-pipeline.env.
   - id: stop-care-job
     name: ${_GCLOUD_IMAGE}
     entrypoint: bash
     args: ["cicd/stop_care_job.sh"]
+
+  # After the pipeline has stopped, so nothing is still writing. bq ships in the gcloud image.
+  - id: wipe-bigquery
+    name: ${_GCLOUD_IMAGE}
+    entrypoint: bash
+    args: ["cicd/wipe_bigquery.sh"]
 
   # Variable values are irrelevant for destroy but must be set.
   - id: destroy-runtime

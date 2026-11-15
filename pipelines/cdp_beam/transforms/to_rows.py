@@ -37,6 +37,7 @@ def interaction_bigquery_row(event: dict) -> dict:
         "event_type": event["event_type"],
         "source": event["source"],
         "vendor": event.get("vendor"),
+        "sequence_id": event.get("sequence_id"),
         "channel": p.get("channel"),
         "intent": p.get("intent"),
         "agent_id": p.get("agent_id"),

@@ -331,9 +331,26 @@ $TAG = "v" + (Get-Date -Format "yyyyMMdd-HHmmss")
 gcloud builds submit --project=$PROJECT --region=$REGION --config=cicd/deploy.yaml `
   --service-account="$SA/cdp-deployer@$PROJECT.iam.gserviceaccount.com" --substitutions="_TAG=$TAG"
 
-# Send test contacts from the mock vendor
+# Send test contacts from the mock vendor: one burst of 50
 gcloud run jobs execute cdp-care-vendor --project=$PROJECT --region=$REGION --wait `
   --args="cdp_sources.care.mock_vendor,--count=50"
+
+# Or continuous load with the job's default args (100 contacts/s until cancelled; 4-hour cap)
+gcloud run jobs execute cdp-care-vendor --project=$PROJECT --region=$REGION
+# Or choose rate, run time and faults: 100 contacts/s for 10 minutes, clean records only
+#   --duration 90s|10m|2h   --no-bad-records (no resends, unknown callers or missing fields)
+#   --start-seq N           continue an earlier run's sequence_id numbering
+gcloud run jobs execute cdp-care-vendor --project=$PROJECT --region=$REGION `
+  "--args=cdp_sources.care.mock_vendor,--rate=100,--duration=10m,--no-bad-records"
+# Stop it (teardown also does this)
+gcloud run jobs executions list --job=cdp-care-vendor --project=$PROJECT --region=$REGION --limit=1
+gcloud run jobs executions cancel <EXECUTION_NAME> --project=$PROJECT --region=$REGION
+
+# Every contact carries a sequence_id (resends repeat it). Missing numbers in core.interactions
+# are in ops.dead_letter; anything in neither table was lost:
+#   SELECT s FROM UNNEST(GENERATE_ARRAY(1, <last sequence_id>)) s
+#   WHERE s NOT IN (SELECT sequence_id FROM core.interactions WHERE sequence_id IS NOT NULL)
+#     AND s NOT IN (SELECT sequence_id FROM ops.dead_letter WHERE sequence_id IS NOT NULL)
 
 # Read a customer through the API (only cdp-smoke may call it; impersonate it for a token)
 $url   = gcloud run services describe customer-api --project=$PROJECT --region=$REGION --format="value(status.url)"

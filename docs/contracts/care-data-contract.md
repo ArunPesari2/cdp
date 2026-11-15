@@ -8,7 +8,7 @@ How customer-service contacts enter the CDP. Status: locked for slice 1.
 | --- | --- |
 | Source system | Contact-centre platform (calls and chats), vendor format modelled on Amazon Connect CTRs |
 | Pattern | P3 Stream: the vendor publishes to Pub/Sub topic `vendor-care-ctr` |
-| Message attributes | `source=care`, `vendor=connect`, `record_type=CTR` |
+| Message attributes | `source=care`, `vendor=connect`, `record_type=CTR`; the mock vendor also sets `sequence_id` |
 | Delivery | At-least-once; the vendor may resend a record; order is not guaranteed |
 | Retention | 7 days on the topic (replay window) |
 | Reconciliation | Nightly API pull from the vendor (v2) |
@@ -28,6 +28,7 @@ Sample: [contracts/vendor/connect/ctr.sample.json](../../contracts/vendor/connec
 | `Queue.Name` | No | Routing queue |
 | `Attributes.intent` | Yes | One of the intents below |
 | `Attributes.summary` | Yes | Agent wrap-up summary |
+| `Attributes.sequence_id` | No | Running number per contact, as a string of digits; a resend repeats it. Sent by the mock vendor so every contact can be traced end to end |
 
 Timestamp rule: a timestamp without a time-zone offset is rejected (`INVALID_TIMESTAMP`); the CDP never guesses the zone.
 
@@ -47,6 +48,7 @@ Schema: [contracts/events/care/contact_ended.v1.avsc](../../contracts/events/car
 | `DisconnectTimestamp − InitiationTimestamp` | `payload.duration_sec` | Seconds, rounded to the nearest second |
 | `Queue.Name` | `payload.queue` | As is, optional |
 | `Attributes.summary` | `payload.summary` | As is |
+| `Attributes.sequence_id` | `sequence_id` | Whole number; null if absent; not digits → `INVALID_TYPE`. Also written to `core.interactions` and `ops.dead_letter`, so each number appears once in one of them |
 
 Allowed values:
 

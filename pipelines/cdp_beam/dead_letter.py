@@ -12,9 +12,13 @@ class RejectedRecord(Exception):
     def __init__(self, code: str, detail: str):
         super().__init__(f"{code}: {detail}")
         self.code, self.detail = code, detail
+        # Set by an adapter that could read the source's sequence number before the record failed,
+        # so the dead letter still says which message it was.
+        self.sequence_id: int | None = None
 
 
-def make_dead_letter(source: str, stage: str, code: str, detail: str, raw, event_id: str | None = None) -> dict:
+def make_dead_letter(source: str, stage: str, code: str, detail: str, raw, event_id: str | None = None,
+                     sequence_id: int | None = None) -> dict:
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8", errors="replace")
     elif not isinstance(raw, str):
@@ -25,6 +29,7 @@ def make_dead_letter(source: str, stage: str, code: str, detail: str, raw, event
         "error_code": code,
         "error_detail": detail,
         "event_id": event_id,
+        "sequence_id": sequence_id,
         "raw_payload": raw,
         "failed_ts": datetime.now(timezone.utc).isoformat(),
     }

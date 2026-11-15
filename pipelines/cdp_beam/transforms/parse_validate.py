@@ -30,7 +30,8 @@ class ParseAndAdapt(beam.DoFn):
         except RejectedRecord as e:
             self.rejected.inc()
             event_id = record.get("ContactId") if isinstance(record, dict) else None
-            yield beam.pvalue.TaggedOutput(DEAD_LETTER, make_dead_letter(self.source, "adapter", e.code, e.detail, raw, event_id))
+            yield beam.pvalue.TaggedOutput(DEAD_LETTER, make_dead_letter(
+                self.source, "adapter", e.code, e.detail, raw, event_id, e.sequence_id))
 
 
 def validate_contact_ended(event: dict) -> None:
@@ -66,4 +67,5 @@ class ValidateCanonical(beam.DoFn):
         except RejectedRecord as e:
             self.rejected.inc()
             yield beam.pvalue.TaggedOutput(
-                DEAD_LETTER, make_dead_letter(self.source, "validate", e.code, e.detail, event, event.get("event_id")))
+                DEAD_LETTER, make_dead_letter(self.source, "validate", e.code, e.detail, event,
+                                              event.get("event_id"), event.get("sequence_id")))

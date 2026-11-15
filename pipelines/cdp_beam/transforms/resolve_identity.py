@@ -55,4 +55,5 @@ class ResolveIdentity(beam.DoFn):
                     return
         self.unresolved.inc()
         yield beam.pvalue.TaggedOutput(DEAD_LETTER, make_dead_letter(
-            self.source, "resolve_identity", "UNKNOWN_IDENTITY", str(identifiers), event, event["event_id"]))
+            self.source, "resolve_identity", "UNKNOWN_IDENTITY", str(identifiers), event, event["event_id"],
+            event.get("sequence_id")))

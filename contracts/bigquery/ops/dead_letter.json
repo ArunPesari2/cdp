@@ -4,6 +4,7 @@
   {"name": "error_code", "type": "STRING", "mode": "REQUIRED"},
   {"name": "error_detail", "type": "STRING", "mode": "NULLABLE"},
   {"name": "event_id", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "sequence_id", "type": "INT64", "mode": "NULLABLE", "description": "Source's running number, when it could be read before the record failed"},
   {"name": "raw_payload", "type": "STRING", "mode": "REQUIRED"},
   {"name": "failed_ts", "type": "TIMESTAMP", "mode": "REQUIRED"}
 ]

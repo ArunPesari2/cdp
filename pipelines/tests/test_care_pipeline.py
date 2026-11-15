@@ -63,7 +63,32 @@ def test_good_duplicate_unknown_and_invalid_records():
                       ("adapter", "INVALID_JSON"),
                       ("adapter", "INVALID_ENCODING")]),
             label="dead_letters")
-        
+
+
+def test_every_sequence_id_lands_once_in_events_or_dead_letters():
+    def numbered(seq, contact_id, **changes):
+        r = json.loads(record(contact_id, **changes))
+        r["Attributes"]["sequence_id"] = str(seq)
+        return json.dumps(r).encode()
+
+    raw = [
+        numbered(1, "c-1"),
+        numbered(2, "c-2"),
+        numbered(2, "c-2"),                                               # resend repeats the number
+        numbered(3, "c-3", CustomerEndpoint={"Address": "+19995550000"}), # unknown phone
+        numbered(4, "c-4", DisconnectTimestamp=None),                     # fails in the adapter
+    ]
+
+    with TestPipeline() as p:
+        events, dead_letters = build(p | beam.Create(raw), FakeLookup())
+
+        assert_that(
+            events | "Seq" >> beam.Map(lambda e: e["sequence_id"]),
+            equal_to([1, 2]), label="saved")
+        assert_that(
+            dead_letters | "DeadSeq" >> beam.Map(lambda d: (d["sequence_id"], d["error_code"])),
+            equal_to([(3, "UNKNOWN_IDENTITY"), (4, "MISSING_FIELD")]), label="dead_letters")
+
 # def test_intentional_failure():
 #         assert False, "INTENTIONAL FAILURE FOR CLOUD BUILD TEST"
 

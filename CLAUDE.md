@@ -34,9 +34,11 @@ Deploy and teardown are Cloud Build pipelines started by hand from the repo root
 explicit `--project` and `--service-account` (cdp-deployer); `_TAG` is required. Exact commands are
 in the README "Day to day" section. `deploy.yaml` runs the Python and Java tests first, so a failing
 test blocks the deploy. There is no local runtime (no Spanner emulator or compose setup): beyond the
-unit tests, the only end-to-end check is a deploy plus its smoke test. Teardown (`cicd/teardown.yaml`) first cancels or drains the Dataflow job
-(`cicd/stop_care_job.sh`, mode from `CARE_ON_STOP` in `care-pipeline.env`), then destroys the
-`runtime` stack to stop hourly billing. No linter or formatter is configured.
+unit tests, the only end-to-end check is a deploy plus its smoke test. Teardown (`cicd/teardown.yaml`) cancels any running mock-vendor
+execution (`cicd/stop_care_vendor.sh`), cancels or drains the Dataflow job (`cicd/stop_care_job.sh`,
+mode from `CARE_ON_STOP` in `care-pipeline.env`), drops the BigQuery tables unless
+`_WIPE_BIGQUERY=false` (`cicd/wipe_bigquery.sh`; the next deploy's `deploy-data` recreates them),
+then destroys the `runtime` stack to stop hourly billing. No linter or formatter is configured.
 
 Running Terraform locally (foundation, or inspecting a stack) is in the README "Terraform commands"
 section. Key points: state lives at `gs://<project>-tfstate/cdp/<env>/<stack>`; Terraform authenticates via

@@ -155,7 +155,9 @@ resource "google_cloud_run_v2_service_iam_member" "smoke_invoker" {
 resource "google_cloud_run_v2_job" "sources" {
   for_each = {
     "cdp-seed"        = ["cdp_sources.world.seed", "--count", "10000"]
-    "cdp-care-vendor" = ["cdp_sources.care.mock_vendor", "--count", "50"]
+    # Default run: 100 contacts/s (~104 records/s with resends) until cancelled or the task timeout.
+    # The smoke test overrides these with its own --args for a single contact.
+    "cdp-care-vendor" = ["cdp_sources.care.mock_vendor", "--count", "0", "--rate", "100"]
   }
   name                = each.key
   location            = var.region
@@ -165,7 +167,9 @@ resource "google_cloud_run_v2_job" "sources" {
   template {
     template {
       service_account = local.sa.sources
-      timeout         = "1800s"
+      # Safety cap: an endless vendor run is killed after 4 hours (~₹120-140 of Spanner + Dataflow)
+      # if nobody cancels it or runs teardown. Raise it for longer runs.
+      timeout         = "14400s"
       max_retries     = 0
       containers {
         image = var.sources_image

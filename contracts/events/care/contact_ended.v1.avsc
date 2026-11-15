@@ -9,6 +9,7 @@
     {"name": "schema_version", "type": "int", "default": 1},
     {"name": "event_ts", "type": "string", "doc": "UTC ISO-8601; when the contact ended"},
     {"name": "source", "type": "string", "default": "care"},
+    {"name": "sequence_id", "type": ["null", "long"], "default": null, "doc": "Source's running number per contact; resends repeat it. Optional: not every source sends one"},
     {"name": "identifiers", "type": {"type": "map", "values": "string"}, "doc": "Raw identifiers, e.g. {phone: +1206...}"},
     {
       "name": "payload",
