@@ -342,6 +342,10 @@ gcloud run jobs execute cdp-care-vendor --project=$PROJECT --region=$REGION
 #   --start-seq N           continue an earlier run's sequence_id numbering
 gcloud run jobs execute cdp-care-vendor --project=$PROJECT --region=$REGION `
   "--args=cdp_sources.care.mock_vendor,--rate=100,--duration=10m,--no-bad-records"
+# Send the fixed demo story: Priya Sharma (+12065550101) gets 4 related contacts over the last
+# 3 weeks (sources/cdp_sources/demo_stories.py). Run once per deploy; random contacts never touch her.
+gcloud run jobs execute cdp-care-vendor --project=$PROJECT --region=$REGION --wait `
+  --args="cdp_sources.care.mock_vendor,--scenario=demo"
 # Stop it (teardown also does this)
 gcloud run jobs executions list --job=cdp-care-vendor --project=$PROJECT --region=$REGION --limit=1
 gcloud run jobs executions cancel <EXECUTION_NAME> --project=$PROJECT --region=$REGION

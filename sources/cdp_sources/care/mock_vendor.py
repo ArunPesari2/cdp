@@ -8,8 +8,10 @@ Runs as Cloud Run job `cdp-care-vendor`:
   python -m cdp_sources.care.mock_vendor --count 50                                 # one burst of 50
   python -m cdp_sources.care.mock_vendor --count 0 --rate 100                       # 100/s until stopped
   python -m cdp_sources.care.mock_vendor --rate 100 --duration 10m --no-bad-records  # 10 min, clean only
+  python -m cdp_sources.care.mock_vendor --scenario demo                            # fixed demo stories
 
 Every contact carries Attributes.sequence_id (1, 2, 3, ... from --start-seq); a resend repeats it.
+Random contacts never go to the demo customers (cdp_sources.demo_stories), so their stories stay clean.
 """
 
 import argparse
@@ -20,11 +22,13 @@ import signal
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time as clock, timedelta, timezone
 
 import pyarrow.parquet as pq
 
 from cdp_common.config import CARE_VENDOR_TOPIC, Settings
+
+from cdp_sources.demo_stories import DEMO_CUSTOMERS, DEMO_PHONES
 
 INTENTS = {
     # intent: (weight, queue, summaries)
@@ -56,10 +60,30 @@ INTENTS = {
     ]),
 }
 UNKNOWN_PHONE = "+19995550000"
+SCENARIOS = {"demo": DEMO_CUSTOMERS}
+# Fixed namespace, so a story contact gets the same ContactId every time it is sent on the same day.
+STORY_NAMESPACE = uuid.UUID("0b7e6a52-9c1d-4f3e-a8b2-6d4c3e2f1a90")
 
 
 def iso(ts: datetime) -> str:
     return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def ctr(contact_id: str, channel: str, ended_at: datetime, duration: int, phone: str, agent: str,
+        intent: str, summary: str, sequence_id: int) -> dict:
+    """One contact record in the vendor's format."""
+    return {
+        "ContactId": contact_id,
+        "Channel": channel,
+        "InitiationTimestamp": iso(ended_at - timedelta(seconds=duration)),
+        "DisconnectTimestamp": iso(ended_at),
+        "CustomerEndpoint": {"Address": phone, "Type": "TELEPHONE_NUMBER"},
+        "Agent": {"Username": agent},
+        "Queue": {"Name": INTENTS[intent][1]},
+        # Contact attributes are strings in the vendor format. One number per contact: a resend is a
+        # copy of the record, so it repeats the number, and the pipeline's dedupe drops it.
+        "Attributes": {"intent": intent, "summary": summary, "sequence_id": str(sequence_id)},
+    }
 
 
 class MockVendor:
@@ -74,24 +98,37 @@ class MockVendor:
     def contact_record(self, ended_at: datetime) -> dict:
         rng = self.rng
         intent = rng.choices(list(INTENTS), weights=[v[0] for v in INTENTS.values()])[0]
-        _, queue, summaries = INTENTS[intent]
+        summaries = INTENTS[intent][2]
         channel = rng.choices(["VOICE", "CHAT"], weights=[60, 40])[0]
         duration = rng.randint(120, 1500) if channel == "VOICE" else rng.randint(240, 2400)
         phone = UNKNOWN_PHONE if rng.random() < self.unknown_pct else rng.choice(self.phones)
+        contact_id = str(uuid.UUID(int=rng.getrandbits(128), version=4))
+        return ctr(contact_id, channel, ended_at, duration, phone, f"agent{rng.randint(2201, 2260)}",
+                   intent, rng.choice(summaries), self._take_seq())
+
+    def story_records(self, customers: list[dict], today: date) -> list[dict]:
+        """Every contact of every given story, dated relative to `today` (UTC), oldest first.
+
+        ContactId is derived from phone, step and day, so sending again on the same day repeats the
+        same contacts (dedupe and the Spanner upsert absorb them). On another day the story is sent
+        again with new dates, so send it once per deploy (teardown wipes Spanner and BigQuery).
+        """
+        records = []
+        for customer in customers:
+            phone = customer["person"]["phone"]
+            for step, c in enumerate(customer["contacts"], start=1):
+                hour, minute = map(int, c["at"].split(":"))
+                ended_at = datetime.combine(today - timedelta(days=c["days_ago"]), clock(hour, minute),
+                                            tzinfo=timezone.utc)
+                contact_id = str(uuid.uuid5(STORY_NAMESPACE, f"{phone}:{step}:{today.isoformat()}"))
+                records.append(ctr(contact_id, c["channel"], ended_at, c["minutes"] * 60, phone, c["agent"],
+                                   c["intent"], c["summary"], self._take_seq()))
+        return sorted(records, key=lambda r: r["DisconnectTimestamp"])
+
+    def _take_seq(self) -> int:
         sequence_id = self.next_seq
         self.next_seq += 1
-        return {
-            "ContactId": str(uuid.UUID(int=rng.getrandbits(128), version=4)),
-            "Channel": channel,
-            "InitiationTimestamp": iso(ended_at - timedelta(seconds=duration)),
-            "DisconnectTimestamp": iso(ended_at),
-            "CustomerEndpoint": {"Address": phone, "Type": "TELEPHONE_NUMBER"},
-            "Agent": {"Username": f"agent{rng.randint(2201, 2260)}"},
-            "Queue": {"Name": queue},
-            # Contact attributes are strings in the vendor format. One number per contact: a resend is a
-            # copy of the record, so it repeats the number, and the pipeline's dedupe drops it.
-            "Attributes": {"intent": intent, "summary": rng.choice(summaries), "sequence_id": str(sequence_id)},
-        }
+        return sequence_id
 
     def next_records(self, ended_at: datetime) -> list[dict]:
         """One new contact, plus a resend of the previous one now and then (vendor retry)."""
@@ -170,6 +207,9 @@ def main() -> None:
     parser.add_argument("--pool", type=int, default=0,
                         help="Only use the first N customers, so they get repeat contacts (0 = everyone)")
     parser.add_argument("--phone", help="Send every contact from this caller (used by the deploy smoke test)")
+    parser.add_argument("--scenario", choices=sorted(SCENARIOS),
+                        help="Send the fixed demo stories once (backdated, oldest first) and stop; "
+                             "ignores --count, --rate, --duration and the fault options")
     parser.add_argument("--dup-pct", type=float, default=0.04, help="Share of contacts resent (with --bad-records)")
     parser.add_argument("--unknown-pct", type=float, default=0.02, help="Share from an unknown caller (with --bad-records)")
     parser.add_argument("--invalid-pct", type=float, default=0.02, help="Share missing DisconnectTimestamp (with --bad-records)")
@@ -183,10 +223,21 @@ def main() -> None:
         args.dup_pct = args.unknown_pct = args.invalid_pct = 0.0
 
     settings = Settings.from_env()
+    if args.scenario:
+        vendor = MockVendor([], args.seed, 0.0, 0.0, 0.0, args.start_seq)
+        sink = PubSubSink(settings.project)
+        records = vendor.story_records(SCENARIOS[args.scenario], datetime.now(timezone.utc).date())
+        for record in records:
+            sink.send(record)
+        sink.close()
+        print(f"Scenario {args.scenario}: {len(records)} contacts for {len(SCENARIOS[args.scenario])} "
+              f"customer(s); sequence_id {args.start_seq}..{vendor.next_seq - 1}")
+        return
     if args.phone:
         phones = [args.phone]
     else:
         phones = pq.read_table(settings.world_uri, columns=["phone"]).column("phone").to_pylist()
+        phones = [p for p in phones if p not in DEMO_PHONES]
         if args.pool:
             phones = phones[:args.pool]
     vendor = MockVendor(phones, args.seed, args.dup_pct, args.unknown_pct, args.invalid_pct, args.start_seq)

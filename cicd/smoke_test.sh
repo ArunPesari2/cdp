@@ -13,9 +13,10 @@ echo "== Seeding customers (idempotent)"
 gcloud run jobs execute cdp-seed --region="${REGION}" --wait
 
 # value(rows[0][0]): gcloud prints the first column of the first row itself (no JSON parser needed),
-# and prints nothing if the query returns no rows.
+# and prints nothing if the query returns no rows. Demo customers (@example.com, see
+# sources/cdp_sources/demo_stories.py) are skipped so the smoke contact never lands in their story.
 PHONE=$(gcloud spanner databases execute-sql cdp --instance=cdp-instance --format="value(rows[0][0])" \
-  --sql="SELECT phone FROM Customer ORDER BY customer_id LIMIT 1")
+  --sql="SELECT phone FROM Customer WHERE email NOT LIKE '%@example.com' ORDER BY customer_id LIMIT 1")
 [ -n "${PHONE}" ] || { echo "FAIL: no customer in Spanner after seeding" >&2; exit 1; }
 URL=$(gcloud run services describe customer-api --region="${REGION}" --format="value(status.url)")
 TOKEN=$(gcloud auth print-identity-token --impersonate-service-account="${SMOKE_SA}" \
