@@ -62,7 +62,8 @@ already pushed `_TAG`. In PowerShell, quote every whole `"-flag=value"` argument
 
 **Conventions that matter**
 - Spanner migrations are append-only: add `000N_*.sql`, never edit an applied one.
-- `libs/cdp_common/cdp_common/events.py` mirrors `contracts/events/*.avsc`; change both together, and update the data contract doc.
+- `libs/cdp_common/cdp_common/events.py` mirrors `contracts/events/*.avsc` (enums and required fields only); change both together, and update the data contract doc. A new event field also touches the adapter, `to_rows.py`, and the BigQuery JSON in `contracts/bigquery/` (plus `dead_letter.py` and `ops/dead_letter.json` if rejects should carry it).
+- `sequence_id` (set by the mock vendor, optional on the event) is the loss check: every number must land exactly once in `core.interactions` or `ops.dead_letter`, including adapter rejects. `test_every_sequence_id_lands_once_in_events_or_dead_letters` guards this.
 - Spanner writes are upserts so at-least-once delivery and replays are safe; timestamps without an explicit offset are rejected, never guessed.
 
 **Infra and delivery**
